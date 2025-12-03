@@ -148,7 +148,7 @@
             const pathRef = useRef(null);
             const trainRef = useRef(null); 
             const trainContainerRef = useRef(null);
-            const audioRef = useRef(null); // 실제 오디오 객체
+            const audioRef = useRef(null); 
             
             const [stationOffsets, setStationOffsets] = useState([]);
 
@@ -163,7 +163,7 @@
                 window.addEventListener('resize', handleResize);
                 
                 try {
-                    const saved = localStorage.getItem('travel_memories_html_v1');
+                    const saved = localStorage.getItem('travel_memories_html_v2');
                     if (saved) setMemories(JSON.parse(saved));
                 } catch (e) {
                     console.error("Failed to load memories", e);
@@ -172,21 +172,25 @@
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
 
-            // [오디오 자동 재생 로직]
+            // [오디오 자동 재생 로직 수정: 상대 경로 명시]
             useEffect(() => {
                 if (isPanelOpen && selectedStation) {
-                    // 이전 오디오 정지
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current = null;
                     }
-                    // mp3 폴더에서 파일 찾기
-                    const audioPath = `mp3/${selectedStation.name}.mp3`;
+                    
+                    // 핵심 수정: ./mp3/ 로 시작하여 현재 폴더 위치 기준임을 명시
+                    const audioPath = `./mp3/${selectedStation.name}.mp3`;
+                    
+                    // 한글 파일명 인코딩 문제 방지를 위해 encodeURIComponent 사용 가능하지만
+                    // 보통 로컬 파일 시스템에서는 그대로 쓰는 게 나을 수 있음.
+                    // 만약 404가 뜨면 encodeURIComponent(selectedStation.name) 사용 고려.
+                    
                     const audio = new Audio(audioPath);
-                    audio.play().catch(e => console.log("자동 재생 실패 (브라우저 정책):", e));
+                    audio.play().catch(e => console.log("자동 재생 실패 (브라우저 정책 또는 파일 없음):", e));
                     audioRef.current = audio;
                 } else {
-                    // 패널 닫히면 오디오 정지
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current = null;
@@ -208,7 +212,7 @@
             }, [trainIndex, isMoving]);
 
             const travelDistance = Math.abs(trainIndex - prevTrainIndex.current);
-            // [속도 복구] 묵직한 이동
+            // [속도 유지]
             const transitionDuration = Math.max(1.5, travelDistance * 0.6); 
 
             useEffect(() => {
