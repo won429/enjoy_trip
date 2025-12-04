@@ -15,6 +15,19 @@
     <!-- Babel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 
+    <!-- Firebase SDK (ES Modules) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 전역으로 사용할 수 있게 window 객체에 할당
+        window.firebaseModules = { 
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, 
+            getFirestore, doc, setDoc, collection, onSnapshot 
+        };
+    </script>
+
     <!-- 폰트 -->
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
 
@@ -209,6 +222,7 @@
             
             const [memories, setMemories] = useState({});
             const [currentReviews, setCurrentReviews] = useState({});
+            const [user, setUser] = useState(null); // Firebase 유저 상태
 
             const [containerWidth, setContainerWidth] = useState(360);
             const containerRef = useRef(null);
@@ -221,7 +235,7 @@
 
             const [stationOffsets, setStationOffsets] = useState([]);
 
-            // 초기화
+            // [Firebase 초기화 및 인증]
             useEffect(() => {
                 const handleResize = () => {
                     if (containerRef.current) {
@@ -230,16 +244,74 @@
                 };
                 handleResize();
                 window.addEventListener('resize', handleResize);
-                
-                try {
-                    const saved = localStorage.getItem('travel_memories_final_fixed_popup');
-                    if (saved) setMemories(JSON.parse(saved));
-                } catch (e) {
-                    console.error("Failed to load memories", e);
+
+                // Firebase 설정
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+                    apiKey: "AIzaSyDf7FQL5ohMjEpPPUb_ljSXy3sclD_9aDw",
+                    authDomain: "mytravellog-d7883.firebaseapp.com",
+                    projectId: "mytravellog-d7883",
+                    storageBucket: "mytravellog-d7883.firebasestorage.app",
+                    messagingSenderId: "117323760888",
+                    appId: "1:117323760888:web:f93baf1457c76f349d270d"
+                };
+
+                // window.firebaseModules가 로드될 때까지 대기
+                if (window.firebaseModules) {
+                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebaseModules;
+                    
+                    try {
+                        const app = initializeApp(firebaseConfig);
+                        const auth = getAuth(app);
+                        
+                        const initAuth = async () => {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        };
+                        initAuth();
+                        
+                        const unsubscribe = onAuthStateChanged(auth, setUser);
+                        return () => {
+                            unsubscribe();
+                            window.removeEventListener('resize', handleResize);
+                        };
+                    } catch (e) {
+                        console.error("Firebase Init Error:", e);
+                    }
                 }
-                
+
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
+
+            // [Firestore 데이터 실시간 동기화]
+            useEffect(() => {
+                if (!user || !window.firebaseModules) return;
+
+                const { getFirestore, collection, onSnapshot } = window.firebaseModules;
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                // 'reviews' 컬렉션 구독 (모든 리뷰 데이터)
+                // 경로: artifacts/{appId}/public/data/reviews
+                const unsubscribe = onSnapshot(
+                    collection(db, 'artifacts', appId, 'public', 'data', 'reviews'),
+                    (snapshot) => {
+                        const newMemories = {};
+                        snapshot.forEach((doc) => {
+                            // 문서 ID는 역의 인덱스(0, 1, 2...)
+                            newMemories[doc.id] = doc.data();
+                        });
+                        setMemories(newMemories);
+                    },
+                    (error) => {
+                        console.error("데이터 불러오기 실패:", error);
+                    }
+                );
+
+                return () => unsubscribe();
+            }, [user]);
 
             // [오디오 로직 1: 재생 담당] 
             // selectedStation이 변경되면 무조건 재생
@@ -482,12 +554,25 @@
                 }
             }, [isMoving, transitionDuration]);
 
-            const saveMemory = () => {
-                if (!selectedStation) return;
-                const newMemories = { ...memories, [selectedStation.id]: currentReviews };
-                setMemories(newMemories);
-                localStorage.setItem('travel_memories_popup_final', JSON.stringify(newMemories));
-                alert("소중한 기록이 저장되었습니다! ⭐");
+            // [Firestore 저장]
+            const saveMemory = async () => {
+                if (!selectedStation || !user || !window.firebaseModules) return;
+
+                const { getFirestore, doc, setDoc } = window.firebaseModules;
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                try {
+                    // 공개 데이터 경로: artifacts/{appId}/public/data/reviews/{stationId}
+                    await setDoc(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'reviews', String(selectedStation.id)),
+                        currentReviews
+                    );
+                    alert("소중한 기록이 저장되었습니다! ⭐ (모두에게 공유됩니다)");
+                } catch (e) {
+                    console.error(e);
+                    alert("저장에 실패했습니다. 관리자에게 문의하세요.");
+                }
             };
 
             const handleReviewChange = (member, field, value) => {
@@ -718,7 +803,7 @@
                                         </div>
                                         <p className="text-slate-600 text-sm font-medium leading-relaxed">
                                             역을 클릭하여 나만의 추억과<br/>
-                                            별점을 기록해 보세요! ✍️
+                                            별점을 기록해 보세요! ✍️ (모두와 공유됩니다)
                                         </p>
                                     </div>
 
