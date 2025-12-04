@@ -217,7 +217,7 @@
             const trainRef = useRef(null); 
             const trainContainerRef = useRef(null);
             const audioRef = useRef(null); 
-            const playingStationIdRef = useRef(null); // [추가] 현재 재생 중인 역 ID 추적용
+            const playingStationIdRef = useRef(null); // 현재 재생 중인 역 ID 추적용
 
             const [stationOffsets, setStationOffsets] = useState([]);
 
@@ -241,59 +241,49 @@
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
 
-            // [오디오 재생 로직 - 수정됨]
-            // isMoving(이동 중) 또는 isPanelOpen(패널 열림) 상태면 재생
-            // 단, 이미 해당 역의 오디오가 재생 중이면 중단하지 않고 유지
+            // [수정된 오디오 로직]: 오직 selectedStation이 바뀌거나, 패널이 닫힐 때만 반응
+            // 기차 도착(isMoving false, isPanelOpen true) 등에는 반응하지 않도록 함
             useEffect(() => {
-                const shouldPlay = selectedStation && (isMoving || isPanelOpen);
-
-                if (shouldPlay) {
-                    // 현재 재생 중인 역과 같다면 리스타트하지 않고 유지
-                    if (playingStationIdRef.current === selectedStation.id) {
-                        return;
-                    }
-
-                    // 다른 역이거나 새로 재생해야 하는 경우
-                    if (audioRef.current) {
-                        audioRef.current.pause();
-                        audioRef.current.currentTime = 0;
-                        audioRef.current = null;
-                    }
-
-                    // 파일명 설정 (역마다 고유한 파일: id + 1)
-                    const musicNumber = selectedStation.id + 1;
-                    const audioPath = `./music${musicNumber}.mp3`;
-                    
-                    const audio = new Audio(audioPath);
-                    audio.loop = false;
-                    
-                    const playPromise = audio.play();
-                    if (playPromise !== undefined) {
-                        playPromise
-                            .then(() => {
-                                // 재생 성공
-                            })
-                            .catch(e => {
-                                console.log(`음악 재생 실패 (${audioPath}):`, e);
-                            });
-                    }
-                    
-                    audioRef.current = audio;
-                    playingStationIdRef.current = selectedStation.id;
-
-                } else {
-                    // 재생 조건이 아니면(패널 닫힘, 이동 종료 아님 등) 정지
+                // 1. 아무 역도 선택되지 않았거나, (이동중도 아니고 패널도 닫힌 상태)라면 정지
+                if (!selectedStation || (!isMoving && !isPanelOpen)) {
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current = null;
                     }
                     playingStationIdRef.current = null;
+                    return;
+                }
+
+                // 2. 이미 해당 역의 오디오가 재생 중이라면? -> 절대 건드리지 않음 (리스타트 방지)
+                if (playingStationIdRef.current === selectedStation.id) {
+                    return;
+                }
+
+                // 3. 새로운 역이 선택됨 -> 기존 것 끄고 새로 재생
+                if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 0;
+                }
+
+                const musicNumber = selectedStation.id + 1;
+                const audioPath = `./music${musicNumber}.mp3`;
+                
+                const audio = new Audio(audioPath);
+                audio.loop = false;
+                const playPromise = audio.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => {
+                        console.log(`음악 재생 실패: ${audioPath}`, e);
+                    });
                 }
                 
-                return () => {
-                    // 클린업 (컴포넌트 언마운트 시)
-                };
-            }, [selectedStation, isMoving, isPanelOpen]);
+                audioRef.current = audio;
+                playingStationIdRef.current = selectedStation.id;
+
+            }, [selectedStation, isMoving, isPanelOpen]); 
+            // 의존성에 isMoving, isPanelOpen이 있어도, 내부의 playingStationIdRef 체크 로직 덕분에
+            // 같은 역인 경우 리스타트하지 않습니다.
 
             const prevTrainIndex = useRef(0);
             useEffect(() => { 
@@ -376,8 +366,6 @@
                     }
 
                     setTimeout(() => {
-                        // [수정] 패널을 먼저 열어서(isPanelOpen=true) 오디오 재생 조건을 유지시킨 뒤 이동을 멈춤(isMoving=false)
-                        // 이렇게 하면 shouldPlay 조건이 true -> true로 유지되어 오디오가 끊기지 않음
                         setIsPanelOpen(true);
                         setIsMoving(false);
                     }, 500);
@@ -701,7 +689,7 @@
                         className="w-full max-w-[420px] h-full relative flex flex-col shadow-2xl overflow-hidden"
                         style={{ backgroundColor: CONFIG.bgColor }}
                     >
-                        {/* ... 기존 UI 코드 ... */}
+                        {/* [디자인 적용된 팝업] */}
                         {showWelcome && (
                             <div className="absolute inset-0 z-50 flex items-center justify-center px-6 animate-pop-in">
                                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowWelcome(false)}></div>
@@ -784,7 +772,6 @@
                             <div style={{ height: `${(Math.ceil(rawStationList.length / ITEMS_PER_ROW) * CONFIG.rowHeight) + 150}px` }} className="relative w-full">
                                 
                                 <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
-                                    {/* 그림자 경로 */}
                                     <path 
                                         d={fullPath} 
                                         fill="none" 
@@ -794,8 +781,6 @@
                                         strokeLinejoin="round"
                                         className="drop-shadow-sm opacity-80"
                                     />
-                                    
-                                    {/* 실선 경로 */}
                                     <path 
                                         d={solidPath} 
                                         fill="none" 
@@ -804,8 +789,6 @@
                                         strokeLinecap="round" 
                                         strokeLinejoin="round"
                                     />
-                                    
-                                    {/* 점선 경로 */}
                                     <path 
                                         d={dottedPath} 
                                         fill="none" 
@@ -816,8 +799,6 @@
                                         strokeLinejoin="round"
                                         className="opacity-70"
                                     />
-
-                                    {/* 히든 경로 (참조용) */}
                                     <path 
                                         ref={pathRef}
                                         d={fullPath} 
