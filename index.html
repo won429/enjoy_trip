@@ -83,7 +83,7 @@
             "대전역", "서대전역", "오월드", "전시기방", "식장산", 
             "성심당", "제주국제공항", "9.81파크", "신창풍차해안", "차량방전", 
             "레일바이크", "제주국제공항", "동대구역", "구미역", "금오산", 
-            "왜관역", "왜관시장", "석적", "왜관철교", "(구)왜관터널", 
+            "왜관역(칠곡군)", "왜관시장", "석적", "왜관철교", "(구)왜관터널", 
             "가산산성", "대구국제사격장", "달성군", "강정보", "동성로", 
             "무신사", "스파크랜드", "화본역", "중국집1", "동대구역(터미널)", 
             "진주시외버스터미널", "진주역", "모텔", "경상국립대학교(가좌)", "물빛나루쉼터", 
@@ -91,6 +91,45 @@
         ];
 
         const MEMBERS = ["전시기", "오스틴", "홍박사", "류짱", "지노", "성원제"];
+
+        // [환승 정보 데이터]
+        const TRANSFER_INFO = {
+            "문산(전역)": [{ label: "경의중앙", short: "경의", color: "#77C4A3" }],
+            "행신역": [{ label: "경의중앙", short: "경의", color: "#77C4A3" }],
+            "서울역": [
+                { label: "1호선", short: "1", color: "#0052A4" },
+                { label: "4호선", short: "4", color: "#00A5DE" },
+                { label: "공항철도", short: "공항", color: "#0090D2" },
+                { label: "경의중앙", short: "경의", color: "#77C4A3" },
+                { label: "GTX-A", short: "GTX\nA", color: "#9A6292" }
+            ],
+            "용산역": [
+                { label: "1호선", short: "1", color: "#0052A4" },
+                { label: "경의중앙", short: "경의", color: "#77C4A3" }
+            ],
+            "대전역": [{ label: "1호선", short: "1", color: "#007448" }], 
+            "동대구역": [
+                { label: "1호선", short: "1", color: "#D93F5C" }, 
+                { label: "대경선", short: "대경", color: "#0054A6" } 
+            ],
+            "구미역": [{ label: "대경선", short: "대경", color: "#0054A6" }],
+            "왜관역(칠곡군)": [{ label: "대경선", short: "대경", color: "#0054A6" }],
+            "동대구역(터미널)": [
+                { label: "1호선", short: "1", color: "#D93F5C" },
+                { label: "대경선", short: "대경", color: "#0054A6" }
+            ]
+        };
+
+        // [열차 정차 정보 데이터]
+        const TRAIN_INFO = {
+            "행신역": ["KTX"],
+            "용산역": ["KTX"],
+            "서대전역": ["KTX"],
+            "서울역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
+            "대전역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
+            "동대구역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
+            "진주역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"]
+        };
 
         const CONFIG = {
             bgColor: "#EFF2F4",
@@ -198,44 +237,44 @@
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
 
-            // 오디오 자동 재생 (무조건 재생을 위한 로직 수정)
+            // 오디오 재생 로직 (개선됨)
             useEffect(() => {
                 if (isPanelOpen && selectedStation) {
-                    // 이전 오디오 정지 및 초기화
+                    // 이전에 재생 중이던 오디오가 있다면 정지
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current.currentTime = 0;
                         audioRef.current = null;
                     }
                     
-                    // 파일이 3개(music1~3)뿐이므로 순환 재생 로직 적용
-                    // 역 번호와 상관없이 1, 2, 3번 음악이 반복되어 나옵니다.
+                    // 해당 역 ID에 맞는 파일명 설정 (music1.mp3, music2.mp3, ...)
+                    // 파일이 없으면 재생되지 않고 에러 로그만 남깁니다.
+                    // 1, 2, 3번 파일이 순환되는 구조 (사용자가 파일이 3개뿐이라고 가정시)
                     const musicNumber = (selectedStation.id % 3) + 1;
                     const audioPath = `./music${musicNumber}.mp3`;
                     
                     const audio = new Audio(audioPath);
                     const playPromise = audio.play();
                     
-                    // 브라우저 자동 재생 정책 대응
                     if (playPromise !== undefined) {
                         playPromise
                             .then(() => {
                                 // 재생 성공
                             })
                             .catch(e => {
-                                console.log("자동 재생 실패 (사용자 상호작용 필요 혹은 파일 없음):", e);
+                                console.log(`음악 재생 실패 (${audioPath}):`, e);
                             });
                     }
                     
                     audioRef.current = audio;
                 } else {
+                    // 패널이 닫히면 오디오 정지
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current = null;
                     }
                 }
                 
-                // 컴포넌트 언마운트 시 정지
                 return () => {
                     if (audioRef.current) {
                         audioRef.current.pause();
@@ -251,7 +290,6 @@
             }, [trainIndex, isMoving]);
 
             const travelDistance = Math.abs(trainIndex - prevTrainIndex.current);
-            // 속도 유지
             const transitionDuration = Math.max(1.5, travelDistance * 0.6); 
 
             useEffect(() => {
@@ -268,7 +306,6 @@
                         let dist = 0;
                         if (i > 0) {
                             for(let j=0; j<i; j++) {
-                                // 이전 인덱스(j)와 현재(j+1)가 같은 줄인지 확인
                                 const currentRow = Math.floor((j+1) / ITEMS_PER_ROW);
                                 const prevRow = Math.floor(j / ITEMS_PER_ROW);
                                 
@@ -294,7 +331,6 @@
                 const isRightDirection = row % 2 === 0; 
                 
                 const centerX = width / 2;
-                // 3개일 때 위치: (중앙 - 간격), 중앙, (중앙 + 간격)
                 const p0 = centerX - CONFIG.colGap;
                 const p1 = centerX;
                 const p2 = centerX + CONFIG.colGap;
@@ -307,7 +343,6 @@
                     else if (col === 1) x = p1;
                     else x = p2;
                 } else {
-                    // 역방향 (오른쪽 -> 왼쪽)
                     if (col === 0) x = p2;
                     else if (col === 1) x = p1;
                     else x = p0;
@@ -397,7 +432,6 @@
             }, [isMoving, trainIndex, containerWidth, transitionDuration, stationOffsets]);
 
             const handleStationClick = (station, targetIndex) => {
-                // 마지막 노드는 클릭 불가
                 if (targetIndex === rawStationList.length - 1) return;
 
                 if (trainIndex === targetIndex && isPanelOpen) return;
@@ -471,10 +505,7 @@
                 return count === 0 ? 0 : (sum / count).toFixed(1);
             }, [currentReviews]);
 
-            // [역명 렌더링 헬퍼 함수]
             const renderStationName = (name) => {
-                // 괄호가 중간이나 끝에 있는 경우 분리 (예: "역명(부역명)")
-                // (구)왜관터널 처럼 앞에 있는 경우는 제외
                 const parenIndex = name.indexOf('(');
                 let mainName = name;
                 let subName = "";
@@ -484,10 +515,7 @@
                     subName = name.substring(parenIndex);
                 }
 
-                // 글자 수에 따른 폰트 사이즈 및 줄바꿈 처리
                 let fontSizeClass = "text-2xl";
-                
-                // 역명이 길 경우 사이즈 조절
                 if (mainName.length > 9) {
                     fontSizeClass = "text-lg leading-tight";
                 } else if (mainName.length > 6) {
@@ -508,7 +536,90 @@
                 );
             };
 
-            // [경로 데이터 생성 - 실선과 점선 분리]
+            // [열차 뱃지 렌더링 헬퍼 함수] - 이미지/CSS 뱃지 혼용
+            const renderTrainBadges = (stationName) => {
+                const trains = TRAIN_INFO[stationName];
+                if (!trains) return null;
+
+                return (
+                    <div className="flex gap-2 flex-wrap justify-center items-center mr-1">
+                        {trains.map((train, i) => {
+                            // KTX, SRT는 로컬 이미지 사용
+                            if (train === "KTX") {
+                                return (
+                                    <img key={i} src="./ktx.png" alt="KTX" className="h-3 w-auto object-contain" />
+                                );
+                            } else if (train === "SRT") {
+                                return (
+                                    <img key={i} src="./srt.png" alt="SRT" className="h-3 w-auto object-contain" />
+                                );
+                            } 
+                            // 나머지는 CSS 뱃지 유지
+                            else if (train === "무궁화") {
+                                return (
+                                    <div key={i} className="bg-[#E66826] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm whitespace-nowrap">
+                                        무궁화
+                                    </div>
+                                );
+                            } else if (train === "ITX-새마을") {
+                                return (
+                                    <div key={i} className="flex items-center bg-white border border-[#C62329] rounded-sm px-1 py-0.5">
+                                        <span className="text-[#C62329] font-black italic text-[9px] mr-0.5">ITX</span>
+                                        <span className="text-black font-bold text-[9px]">-새마을</span>
+                                    </div>
+                                );
+                            } else if (train === "ITX-마음") {
+                                return (
+                                    <div key={i} className="flex items-center bg-white border border-[#F15A29] rounded-sm px-1 py-0.5">
+                                        <span className="text-[#F15A29] font-black italic text-[9px] mr-0.5">ITX</span>
+                                        <span className="text-black font-bold text-[9px]">-마음</span>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })}
+                    </div>
+                );
+            };
+
+            const renderTransferBadges = (stationName, size = 'small') => {
+                const transfers = TRANSFER_INFO[stationName];
+                if (!transfers) return null;
+
+                const isLarge = size === 'large';
+                const badgeSize = isLarge ? '24px' : '16px';
+                const fontSize = isLarge ? '12px' : (transfers[0].short.length > 1 ? '8px' : '10px');
+                const gap = 'gap-0.5';
+                const containerClass = isLarge ? 'mt-0 flex-wrap justify-center' : 'mt-0.5';
+
+                return (
+                    <div className={`flex ${gap} ${containerClass}`}>
+                        {transfers.map((t, i) => {
+                            const hasNewline = t.short.includes('\n');
+                            const calculatedFontSize = hasNewline 
+                                ? (isLarge ? '8px' : '6px') 
+                                : (t.short.length > 1 && !isLarge ? '8px' : fontSize);
+
+                            return (
+                                <div 
+                                    key={i}
+                                    className="rounded-full flex items-center justify-center text-white font-bold shadow-sm shrink-0 whitespace-pre text-center leading-none"
+                                    style={{ 
+                                        backgroundColor: t.color,
+                                        width: badgeSize,
+                                        height: badgeSize,
+                                        fontSize: calculatedFontSize
+                                    }}
+                                    title={t.label}
+                                >
+                                    {t.short}
+                                </div>
+                            );
+                        })}
+                    </div>
+                );
+            };
+
             const { fullPath, solidPath, dottedPath } = useMemo(() => {
                 let full = "";
                 let solid = "";
@@ -520,7 +631,6 @@
                 const p1 = centerX;
                 const p2 = centerX + CONFIG.colGap;
                 
-                // 시작점
                 const startM = `M ${p0} ${CONFIG.paddingTop} `;
                 full += startM;
                 solid += startM;
@@ -533,25 +643,15 @@
                     let segment = "";
 
                     if (isRightDirection) {
-                        // 왼쪽(p0) -> 오른쪽(p2)
-                        // p0는 이미 시작점이거나 이전 커브에서 옴
-                        // Draw p0 -> p1
                         segment += `L ${p1} ${y} `;
                         
-                        // Check if this is the very last segment connection (43 -> 44)
-                        // 45 items total. indices 0..44.
-                        // Row 14 (last row): 42(p0) -> 43(p1) -> 44(p2)
-                        // Connection p1 -> p2 is the last one
-                        if (r === 14) { // Last row specific logic
-                            solid += segment; // Add p0->p1 to solid
+                        if (r === 14) { 
+                            solid += segment; 
                             full += segment; 
                             
-                            // Dotted segment (p1 -> p2)
                             const dottedSegment = `M ${p1} ${y} L ${p2} ${y} `;
                             dotted += dottedSegment;
-                            full += `L ${p2} ${y} `; // Add to full for train
-                            
-                            // Stop solid here
+                            full += `L ${p2} ${y} `; 
                         } else {
                             segment += `L ${p2} ${y} `;
                             solid += segment;
@@ -564,7 +664,6 @@
                             }
                         }
                     } else {
-                        // 오른쪽(p2) -> 왼쪽(p0)
                         segment += `L ${p1} ${y} L ${p0} ${y} `;
                         solid += segment;
                         full += segment;
@@ -748,6 +847,9 @@
                                     const isSelected = selectedStation?.id === index;
                                     const hasMemory = memories[index];
                                     const isLastNode = index === rawStationList.length - 1;
+                                    
+                                    // 환승 정보 가져오기
+                                    const transfers = TRANSFER_INFO[station];
 
                                     return (
                                         <div 
@@ -784,14 +886,14 @@
                                                 )}
 
                                                 {/* 역 이름 (배경 높이 축소) */}
-                                                <div className="absolute left-0 transition-all duration-300"
+                                                <div className="absolute left-0 transition-all duration-300 flex flex-col items-center gap-1"
                                                 style={{
                                                     top: `${CONFIG.nodeSize / 2 + 6}px`,
                                                     transform: 'translateX(-50%)'
                                                 }}
                                                 >
                                                     <div className={`
-                                                        px-1.5 py-0 rounded-full text-center whitespace-nowrap backdrop-blur-sm border transition-all
+                                                        px-1.5 py-0 rounded-full text-center whitespace-nowrap backdrop-blur-sm border transition-all z-20
                                                         ${isSelected 
                                                             ? 'bg-blue-500 text-white border-blue-500 shadow-lg scale-105 font-bold' 
                                                             : isLastNode
@@ -801,6 +903,9 @@
                                                     `}>
                                                         <span className="text-[11px] leading-[14px] block pt-[1px]">{station}</span>
                                                     </div>
+
+                                                    {/* 환승 노선 표시 (동그라미 크기 확대 및 폰트 자동 조절) */}
+                                                    {renderTransferBadges(station, 'small')}
                                                 </div>
                                             </div>
                                         </div>
@@ -821,7 +926,7 @@
 
                                     <div className="flex-1 p-6 overflow-y-auto">
                                         {/* 지하철 역명판 스타일 헤더 */}
-                                        <div className="relative w-full mb-8 mt-4">
+                                        <div className="relative w-full mb-1 mt-4">
                                             <div className="absolute -top-6 right-0 z-30">
                                                 <button onClick={() => setIsPanelOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
                                                     <X size={18} className="text-slate-500" />
@@ -856,7 +961,7 @@
                                                     </div>
                                                     
                                                     {/* 텍스트 컨테이너 (뱃지 공간만큼 왼쪽 패딩을 주어 시각적 중앙 정렬 보정) */}
-                                                    <div className="flex flex-col items-center justify-center pl-10 pr-4 w-full h-full z-10">
+                                                    <div className="flex flex-col items-center justify-center pl-10 pr-4 w-full h-full z-10 py-1">
                                                         {renderStationName(selectedStation.name)}
                                                     </div>
                                                 </div>
@@ -881,6 +986,12 @@
                                                     </div>
                                                 </div>
                                             </div>
+                                        </div>
+
+                                        {/* 모달 팝업 내 환승 노선 및 열차 정보 표시 - 역명판 아래로 이동 */}
+                                        <div className="flex justify-center w-full mb-2 gap-2 flex-wrap items-center">
+                                            {renderTrainBadges(selectedStation.name)}
+                                            {renderTransferBadges(selectedStation.name, 'large')}
                                         </div>
 
                                         <div className="bg-[#F8FAFC] border border-slate-100 rounded-2xl p-6 mb-8 text-center shadow-sm">
