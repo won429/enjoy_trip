@@ -198,17 +198,35 @@
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
 
-            // 오디오 자동 재생
+            // 오디오 자동 재생 (무조건 재생을 위한 로직 수정)
             useEffect(() => {
                 if (isPanelOpen && selectedStation) {
+                    // 이전 오디오 정지 및 초기화
                     if (audioRef.current) {
                         audioRef.current.pause();
+                        audioRef.current.currentTime = 0;
                         audioRef.current = null;
                     }
                     
-                    const audioPath = `./music${selectedStation.id + 1}.mp3`;
+                    // 파일이 3개(music1~3)뿐이므로 순환 재생 로직 적용
+                    // 역 번호와 상관없이 1, 2, 3번 음악이 반복되어 나옵니다.
+                    const musicNumber = (selectedStation.id % 3) + 1;
+                    const audioPath = `./music${musicNumber}.mp3`;
+                    
                     const audio = new Audio(audioPath);
-                    audio.play().catch(e => console.log("자동 재생 실패:", e));
+                    const playPromise = audio.play();
+                    
+                    // 브라우저 자동 재생 정책 대응
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                // 재생 성공
+                            })
+                            .catch(e => {
+                                console.log("자동 재생 실패 (사용자 상호작용 필요 혹은 파일 없음):", e);
+                            });
+                    }
+                    
                     audioRef.current = audio;
                 } else {
                     if (audioRef.current) {
@@ -217,6 +235,7 @@
                     }
                 }
                 
+                // 컴포넌트 언마운트 시 정지
                 return () => {
                     if (audioRef.current) {
                         audioRef.current.pause();
