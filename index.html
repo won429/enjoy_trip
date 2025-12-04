@@ -473,8 +473,9 @@
                                 trainRef.current.style.transition = 'none';
                                 trainRef.current.style.transform = `rotate(0deg)`;
                             }
+                            // [수정] 이동 상태 해제와 패널 열림을 동시에 처리하여 오디오 끊김 방지
+                            setIsPanelOpen(true);
                             setIsMoving(false);
-                            setTimeout(() => setIsPanelOpen(true), 500);
                         }
                     }, transitionDuration * 1000 + 300); 
                     return () => clearTimeout(timer);
