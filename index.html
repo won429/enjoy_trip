@@ -217,7 +217,7 @@
             const trainRef = useRef(null); 
             const trainContainerRef = useRef(null);
             const audioRef = useRef(null); 
-            const playingStationIdRef = useRef(null); // 현재 재생 중인 역 ID 추적용
+            const playingStationIdRef = useRef(null); // [추가] 현재 재생 중인 역 ID 추적용
 
             const [stationOffsets, setStationOffsets] = useState([]);
 
@@ -241,33 +241,31 @@
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
 
-            // 오디오 재생 로직 (재시작 문제 및 끊김 방지 완벽 수정)
+            // [오디오 재생 로직 - 수정됨]
+            // isMoving(이동 중) 또는 isPanelOpen(패널 열림) 상태면 재생
+            // 단, 이미 해당 역의 오디오가 재생 중이면 중단하지 않고 유지
             useEffect(() => {
-                // 재생 조건: 역이 선택되어 있고 (패널이 열려있거나 이동 중일 때)
-                const shouldPlay = selectedStation && (isPanelOpen || isMoving);
+                const shouldPlay = selectedStation && (isMoving || isPanelOpen);
 
                 if (shouldPlay) {
-                    // 1. 현재 재생 중인 역과 같다면? -> 계속 재생 (리스타트 X)
+                    // 현재 재생 중인 역과 같다면 리스타트하지 않고 유지
                     if (playingStationIdRef.current === selectedStation.id) {
-                        if (audioRef.current && audioRef.current.paused) {
-                            audioRef.current.play().catch(e => console.log("resume error", e));
-                        }
-                        return; // 여기서 함수 종료 (오디오 객체 새로 생성 안 함)
+                        return;
                     }
 
-                    // 2. 다른 역으로 바뀌었다면? -> 기존 오디오 정지 후 새로 재생
+                    // 다른 역이거나 새로 재생해야 하는 경우
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current.currentTime = 0;
                         audioRef.current = null;
                     }
 
-                    // 새 파일 설정 (역 ID + 1)
+                    // 파일명 설정 (역마다 고유한 파일: id + 1)
                     const musicNumber = selectedStation.id + 1;
                     const audioPath = `./music${musicNumber}.mp3`;
                     
                     const audio = new Audio(audioPath);
-                    audio.loop = false; 
+                    audio.loop = false;
                     
                     const playPromise = audio.play();
                     if (playPromise !== undefined) {
@@ -276,26 +274,26 @@
                                 // 재생 성공
                             })
                             .catch(e => {
-                                console.log(`음악 재생 실패: ${audioPath}`, e);
+                                console.log(`음악 재생 실패 (${audioPath}):`, e);
                             });
                     }
                     
                     audioRef.current = audio;
-                    playingStationIdRef.current = selectedStation.id; // 현재 재생 중인 역 ID 업데이트
+                    playingStationIdRef.current = selectedStation.id;
 
                 } else {
-                    // 3. 재생 조건이 아님 (패널 닫힘 등) -> 오디오 정지
+                    // 재생 조건이 아니면(패널 닫힘, 이동 종료 아님 등) 정지
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current = null;
                     }
-                    playingStationIdRef.current = null; // ID 초기화
+                    playingStationIdRef.current = null;
                 }
                 
                 return () => {
-                    // 언마운트 시 정리 (일반적인 상태 변경 시에는 위 로직이 처리함)
+                    // 클린업 (컴포넌트 언마운트 시)
                 };
-            }, [isPanelOpen, isMoving, selectedStation]);
+            }, [selectedStation, isMoving, isPanelOpen]);
 
             const prevTrainIndex = useRef(0);
             useEffect(() => { 
@@ -378,7 +376,8 @@
                     }
 
                     setTimeout(() => {
-                        // [수정] 오디오 끊김 방지를 위해 패널을 먼저 열고(상태 유지), 그 다음 이동을 멈춤
+                        // [수정] 패널을 먼저 열어서(isPanelOpen=true) 오디오 재생 조건을 유지시킨 뒤 이동을 멈춤(isMoving=false)
+                        // 이렇게 하면 shouldPlay 조건이 true -> true로 유지되어 오디오가 끊기지 않음
                         setIsPanelOpen(true);
                         setIsMoving(false);
                     }, 500);
@@ -448,7 +447,6 @@
             }, [isMoving, trainIndex, containerWidth, transitionDuration, stationOffsets]);
 
             const handleStationClick = (station, targetIndex) => {
-                // 마지막 노드는 클릭 불가
                 if (targetIndex === rawStationList.length - 1) return;
 
                 if (trainIndex === targetIndex && isPanelOpen) return;
@@ -469,7 +467,7 @@
                         trainRef.current.style.transition = 'transform 0.15s cubic-bezier(0.25, 1, 0.5, 1)';
                     }
                     prevTrainIndex.current = trainIndex;
-                    setIsMoving(true);
+                    setIsMoving(true); // 이동 시작 -> 오디오 재생 트리거
                     setTrainIndex(targetIndex); 
                 } else {
                     setTimeout(() => setIsPanelOpen(true), 300);
@@ -522,7 +520,6 @@
                 return count === 0 ? 0 : (sum / count).toFixed(1);
             }, [currentReviews]);
 
-            // [역명 렌더링 헬퍼 함수]
             const renderStationName = (name) => {
                 const parenIndex = name.indexOf('(');
                 let mainName = name;
@@ -554,7 +551,6 @@
                 );
             };
 
-            // [열차 뱃지 렌더링 헬퍼 함수] - 이미지/CSS 뱃지 혼용
             const renderTrainBadges = (stationName) => {
                 const trains = TRAIN_INFO[stationName];
                 if (!trains) return null;
@@ -571,7 +567,6 @@
                                     <img key={i} src="./srt.png" alt="SRT" className="h-3 w-auto object-contain" />
                                 );
                             } 
-                            // 나머지는 CSS 뱃지 유지
                             else if (train === "무궁화") {
                                 return (
                                     <div key={i} className="bg-[#E66826] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm whitespace-nowrap">
@@ -599,7 +594,6 @@
                 );
             };
 
-            // [환승 뱃지 렌더링 헬퍼 함수]
             const renderTransferBadges = (stationName, size = 'small') => {
                 const transfers = TRANSFER_INFO[stationName];
                 if (!transfers) return null;
@@ -638,7 +632,6 @@
                 );
             };
 
-            // [경로 데이터 생성 - 실선과 점선 분리]
             const { fullPath, solidPath, dottedPath } = useMemo(() => {
                 let full = "";
                 let solid = "";
@@ -708,7 +701,7 @@
                         className="w-full max-w-[420px] h-full relative flex flex-col shadow-2xl overflow-hidden"
                         style={{ backgroundColor: CONFIG.bgColor }}
                     >
-                        {/* [디자인 적용된 팝업] */}
+                        {/* ... 기존 UI 코드 ... */}
                         {showWelcome && (
                             <div className="absolute inset-0 z-50 flex items-center justify-center px-6 animate-pop-in">
                                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowWelcome(false)}></div>
@@ -791,7 +784,7 @@
                             <div style={{ height: `${(Math.ceil(rawStationList.length / ITEMS_PER_ROW) * CONFIG.rowHeight) + 150}px` }} className="relative w-full">
                                 
                                 <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
-                                    {/* 그림자 경로 (전체 경로) */}
+                                    {/* 그림자 경로 */}
                                     <path 
                                         d={fullPath} 
                                         fill="none" 
@@ -802,7 +795,7 @@
                                         className="drop-shadow-sm opacity-80"
                                     />
                                     
-                                    {/* 실선 경로 (solidPath) */}
+                                    {/* 실선 경로 */}
                                     <path 
                                         d={solidPath} 
                                         fill="none" 
@@ -812,7 +805,7 @@
                                         strokeLinejoin="round"
                                     />
                                     
-                                    {/* 점선 경로 (dottedPath) - 마지막 구간용 */}
+                                    {/* 점선 경로 */}
                                     <path 
                                         d={dottedPath} 
                                         fill="none" 
@@ -824,7 +817,7 @@
                                         className="opacity-70"
                                     />
 
-                                    {/* 참조용 히든 경로 (기차 이동용) */}
+                                    {/* 히든 경로 (참조용) */}
                                     <path 
                                         ref={pathRef}
                                         d={fullPath} 
@@ -867,7 +860,6 @@
                                     const hasMemory = memories[index];
                                     const isLastNode = index === rawStationList.length - 1;
                                     
-                                    // 환승 정보 가져오기
                                     const transfers = TRANSFER_INFO[station];
 
                                     return (
@@ -880,7 +872,6 @@
                                                 className={`relative group ${!isLastNode ? 'cursor-pointer' : 'cursor-default'}`}
                                                 onClick={() => handleStationClick(station, index)}
                                             >
-                                                {/* 스테이션 노드 */}
                                                 {!isLastNode ? (
                                                     <div className={`
                                                         absolute top-0 left-0
@@ -898,13 +889,11 @@
                                                         )}
                                                     </div>
                                                 ) : (
-                                                    // [공사중 노드 디자인]
                                                     <div className="absolute top-0 left-0 w-8 h-8 rounded-full border-4 border-slate-300 border-dashed bg-slate-100 z-10"
                                                         style={{ transform: 'translate(-50%, -50%)' }}
                                                     ></div>
                                                 )}
 
-                                                {/* 역 이름 (배경 높이 축소) */}
                                                 <div className="absolute left-0 transition-all duration-300 flex flex-col items-center gap-1"
                                                 style={{
                                                     top: `${CONFIG.nodeSize / 2 + 6}px`,
@@ -923,7 +912,6 @@
                                                         <span className="text-[11px] leading-[14px] block pt-[1px]">{station}</span>
                                                     </div>
 
-                                                    {/* 환승 노선 표시 (동그라미 크기 확대 및 폰트 자동 조절) */}
                                                     {renderTransferBadges(station, 'small')}
                                                 </div>
                                             </div>
@@ -944,7 +932,6 @@
                                     </div>
 
                                     <div className="flex-1 p-6 overflow-y-auto">
-                                        {/* 지하철 역명판 스타일 헤더 */}
                                         <div className="relative w-full mb-1 mt-4">
                                             <div className="absolute -top-6 right-0 z-30">
                                                 <button onClick={() => setIsPanelOpen(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
@@ -953,7 +940,6 @@
                                             </div>
 
                                             <div className="flex items-center justify-center w-full drop-shadow-xl">
-                                                {/* 이전역 (작은 날개) */}
                                                 <div 
                                                     onClick={() => {
                                                         const prevIdx = selectedStation.id - 1;
@@ -972,24 +958,19 @@
                                                     </div>
                                                 </div>
 
-                                                {/* 중앙 역명 (큰 알약) */}
                                                 <div className="relative z-10 bg-white border-[3px] border-[#0055B8] h-28 min-w-[160px] max-w-[240px] rounded-[56px] flex flex-col items-center justify-center shadow-lg shrink-0 overflow-hidden">
-                                                    {/* 왼쪽 번호 뱃지 */}
                                                     <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#0055B8] flex items-center justify-center shadow-sm z-20">
                                                         <span className="text-white font-bold text-xs">{selectedStation.id + 1}</span>
                                                     </div>
                                                     
-                                                    {/* 텍스트 컨테이너 (뱃지 공간만큼 왼쪽 패딩을 주어 시각적 중앙 정렬 보정) */}
                                                     <div className="flex flex-col items-center justify-center pl-10 pr-4 w-full h-full z-10 py-1">
                                                         {renderStationName(selectedStation.name)}
                                                     </div>
                                                 </div>
 
-                                                {/* 다음역 (작은 날개) */}
                                                 <div 
                                                     onClick={() => {
                                                         const nextIdx = selectedStation.id + 1;
-                                                        // 마지막 노드로는 이동 불가하도록 처리
                                                         if (nextIdx < rawStationList.length - 1) handleStationClick(rawStationList[nextIdx], nextIdx);
                                                     }}
                                                     className={`
@@ -1007,7 +988,6 @@
                                             </div>
                                         </div>
 
-                                        {/* 모달 팝업 내 환승 노선 및 열차 정보 표시 - 역명판 아래로 이동 */}
                                         <div className="flex justify-center w-full mb-2 gap-2 flex-wrap items-center">
                                             {renderTrainBadges(selectedStation.name)}
                                             {renderTransferBadges(selectedStation.name, 'large')}
