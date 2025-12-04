@@ -116,7 +116,7 @@
             "왜관역(칠곡군)": [{ label: "대경선", short: "대경", color: "#0054A6" }],
             "동대구역(터미널)": [
                 { label: "1호선", short: "1", color: "#D93F5C" },
-                { label: "대경선", short: "대경", color: "#0054A6" }
+                { label: "대경선", short: "대경", color: "#0054A6" } 
             ]
         };
 
@@ -128,7 +128,10 @@
             "서울역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
             "대전역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
             "동대구역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
-            "진주역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"]
+            "진주역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
+            "동대구역(터미널)": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
+            "구미역": ["무궁화", "ITX-새마을", "ITX-마음"],
+            "왜관역(칠곡군)": ["무궁화", "ITX-새마을", "ITX-마음"]
         };
 
         const CONFIG = {
@@ -240,16 +243,12 @@
             // 오디오 재생 로직 (개선됨)
             useEffect(() => {
                 if (isPanelOpen && selectedStation) {
-                    // 이전에 재생 중이던 오디오가 있다면 정지
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current.currentTime = 0;
                         audioRef.current = null;
                     }
                     
-                    // 해당 역 ID에 맞는 파일명 설정 (music1.mp3, music2.mp3, ...)
-                    // 파일이 없으면 재생되지 않고 에러 로그만 남깁니다.
-                    // 1, 2, 3번 파일이 순환되는 구조 (사용자가 파일이 3개뿐이라고 가정시)
                     const musicNumber = (selectedStation.id % 3) + 1;
                     const audioPath = `./music${musicNumber}.mp3`;
                     
@@ -258,9 +257,7 @@
                     
                     if (playPromise !== undefined) {
                         playPromise
-                            .then(() => {
-                                // 재생 성공
-                            })
+                            .then(() => {})
                             .catch(e => {
                                 console.log(`음악 재생 실패 (${audioPath}):`, e);
                             });
@@ -268,7 +265,6 @@
                     
                     audioRef.current = audio;
                 } else {
-                    // 패널이 닫히면 오디오 정지
                     if (audioRef.current) {
                         audioRef.current.pause();
                         audioRef.current = null;
@@ -544,7 +540,6 @@
                 return (
                     <div className="flex gap-2 flex-wrap justify-center items-center mr-1">
                         {trains.map((train, i) => {
-                            // KTX, SRT는 로컬 이미지 사용
                             if (train === "KTX") {
                                 return (
                                     <img key={i} src="./ktx.png" alt="KTX" className="h-3 w-auto object-contain" />
