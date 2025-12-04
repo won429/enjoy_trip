@@ -217,7 +217,7 @@
             const trainRef = useRef(null); 
             const trainContainerRef = useRef(null);
             const audioRef = useRef(null); 
-            const playingStationIdRef = useRef(null); // 현재 재생 중인 역 ID 추적용
+            const playingStationIdRef = useRef(null); // 현재 재생 중인 역 ID 추적
 
             const [stationOffsets, setStationOffsets] = useState([]);
 
@@ -241,25 +241,18 @@
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
 
-            // [수정된 오디오 로직]: 오직 selectedStation이 바뀌거나, 패널이 닫힐 때만 반응
-            // 기차 도착(isMoving false, isPanelOpen true) 등에는 반응하지 않도록 함
+            // [오디오 로직 1: 재생 담당] 
+            // selectedStation이 변경될 때마다 실행 (즉, 역을 클릭하면 무조건 실행)
+            // 팝업이 열리든 닫히든, 기차가 움직이든 말든 상관없이 역이 선택되면 재생함.
             useEffect(() => {
-                // 1. 아무 역도 선택되지 않았거나, (이동중도 아니고 패널도 닫힌 상태)라면 정지
-                if (!selectedStation || (!isMoving && !isPanelOpen)) {
-                    if (audioRef.current) {
-                        audioRef.current.pause();
-                        audioRef.current = null;
-                    }
-                    playingStationIdRef.current = null;
-                    return;
-                }
+                if (!selectedStation) return;
 
-                // 2. 이미 해당 역의 오디오가 재생 중이라면? -> 절대 건드리지 않음 (리스타트 방지)
+                // 이미 해당 역의 오디오가 재생 중이라면 리스타트하지 않음 (이게 핵심)
                 if (playingStationIdRef.current === selectedStation.id) {
-                    return;
+                    return; 
                 }
 
-                // 3. 새로운 역이 선택됨 -> 기존 것 끄고 새로 재생
+                // 다른 역이면 기존 오디오 끄고 새로 재생
                 if (audioRef.current) {
                     audioRef.current.pause();
                     audioRef.current.currentTime = 0;
@@ -270,20 +263,35 @@
                 
                 const audio = new Audio(audioPath);
                 audio.loop = false;
-                const playPromise = audio.play();
                 
+                const playPromise = audio.play();
                 if (playPromise !== undefined) {
                     playPromise.catch(e => {
-                        console.log(`음악 재생 실패: ${audioPath}`, e);
+                        console.log(`음악 재생 실패 (${audioPath}):`, e);
                     });
                 }
                 
                 audioRef.current = audio;
                 playingStationIdRef.current = selectedStation.id;
 
-            }, [selectedStation, isMoving, isPanelOpen]); 
-            // 의존성에 isMoving, isPanelOpen이 있어도, 내부의 playingStationIdRef 체크 로직 덕분에
-            // 같은 역인 경우 리스타트하지 않습니다.
+            }, [selectedStation]); // 의존성에서 isMoving, isPanelOpen을 뺐습니다.
+
+            // [오디오 로직 2: 정지 담당]
+            // 아무런 활동(이동X, 팝업X)이 없을 때만 오디오를 끔.
+            // 기차가 도착하면 isMoving=false가 되지만, 동시에 isPanelOpen=true가 되므로 오디오는 꺼지지 않음.
+            useEffect(() => {
+                if (!isMoving && !isPanelOpen) {
+                    if (audioRef.current) {
+                        audioRef.current.pause();
+                        // audioRef.current = null; // 오디오 객체 자체는 남겨둬도 됨
+                    }
+                    // 정지했으므로 재생 중 ID 초기화 (다시 같은 역 눌렀을 때 재생되게 하려면)
+                    // 단, 사용자가 닫기 버튼을 누른 경우에만 초기화되어야 함.
+                    // 이 조건문(!isMoving && !isPanelOpen)은 닫기 버튼 누른 직후에 true가 됨.
+                    playingStationIdRef.current = null;
+                }
+            }, [isMoving, isPanelOpen]);
+
 
             const prevTrainIndex = useRef(0);
             useEffect(() => { 
@@ -455,7 +463,7 @@
                         trainRef.current.style.transition = 'transform 0.15s cubic-bezier(0.25, 1, 0.5, 1)';
                     }
                     prevTrainIndex.current = trainIndex;
-                    setIsMoving(true); // 이동 시작 -> 오디오 재생 트리거
+                    setIsMoving(true); // 이동 시작 -> 오디오 재생 (Effect 1 트리거)
                     setTrainIndex(targetIndex); 
                 } else {
                     setTimeout(() => setIsPanelOpen(true), 300);
@@ -772,6 +780,7 @@
                             <div style={{ height: `${(Math.ceil(rawStationList.length / ITEMS_PER_ROW) * CONFIG.rowHeight) + 150}px` }} className="relative w-full">
                                 
                                 <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
+                                    {/* 그림자 경로 */}
                                     <path 
                                         d={fullPath} 
                                         fill="none" 
@@ -781,6 +790,8 @@
                                         strokeLinejoin="round"
                                         className="drop-shadow-sm opacity-80"
                                     />
+                                    
+                                    {/* 실선 경로 */}
                                     <path 
                                         d={solidPath} 
                                         fill="none" 
@@ -789,6 +800,8 @@
                                         strokeLinecap="round" 
                                         strokeLinejoin="round"
                                     />
+                                    
+                                    {/* 점선 경로 */}
                                     <path 
                                         d={dottedPath} 
                                         fill="none" 
@@ -799,6 +812,8 @@
                                         strokeLinejoin="round"
                                         className="opacity-70"
                                     />
+
+                                    {/* 히든 경로 (참조용) */}
                                     <path 
                                         ref={pathRef}
                                         d={fullPath} 
