@@ -376,8 +376,9 @@
                     }
 
                     setTimeout(() => {
-                        setIsMoving(false);
+                        // [수정] 오디오 끊김 방지를 위해 패널을 먼저 열고(상태 유지), 그 다음 이동을 멈춤
                         setIsPanelOpen(true);
+                        setIsMoving(false);
                     }, 500);
                 }
             };
@@ -443,6 +444,62 @@
                 animationFrameId = requestAnimationFrame(animate);
                 return () => cancelAnimationFrame(animationFrameId);
             }, [isMoving, trainIndex, containerWidth, transitionDuration, stationOffsets]);
+
+            // 오디오 재생 로직 (재시작 문제 및 재생 오류 완벽 수정)
+            useEffect(() => {
+                // 재생 조건: 역이 선택되어 있고 (패널이 열려있거나 이동 중일 때)
+                const shouldPlay = selectedStation && (isPanelOpen || isMoving);
+
+                if (shouldPlay) {
+                    // 1. 현재 재생 중인 역과 같다면? -> 계속 재생 (리스타트 X)
+                    if (playingStationIdRef.current === selectedStation.id) {
+                        if (audioRef.current && audioRef.current.paused) {
+                            audioRef.current.play().catch(e => console.log("resume error", e));
+                        }
+                        return; // 여기서 함수 종료 (오디오 객체 새로 생성 안 함)
+                    }
+
+                    // 2. 다른 역으로 바뀌었다면? -> 기존 오디오 정지 후 새로 재생
+                    if (audioRef.current) {
+                        audioRef.current.pause();
+                        audioRef.current.currentTime = 0;
+                        audioRef.current = null;
+                    }
+
+                    // 새 파일 설정
+                    const musicNumber = selectedStation.id + 1;
+                    const audioPath = `./music${musicNumber}.mp3`;
+                    
+                    const audio = new Audio(audioPath);
+                    audio.loop = false; // 필요시 true로 변경
+                    
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                // 재생 성공
+                            })
+                            .catch(e => {
+                                console.log(`음악 재생 실패: ${audioPath}`, e);
+                            });
+                    }
+                    
+                    audioRef.current = audio;
+                    playingStationIdRef.current = selectedStation.id; // 현재 재생 중인 역 ID 업데이트
+
+                } else {
+                    // 3. 재생 조건이 아님 (패널 닫힘 등) -> 오디오 정지
+                    if (audioRef.current) {
+                        audioRef.current.pause();
+                        audioRef.current = null;
+                    }
+                    playingStationIdRef.current = null; // ID 초기화
+                }
+                
+                return () => {
+                    // 언마운트 시 정리 (일반적인 상태 변경 시에는 위 로직이 처리함)
+                };
+            }, [isPanelOpen, isMoving, selectedStation]);
 
             const handleStationClick = (station, targetIndex) => {
                 if (targetIndex === rawStationList.length - 1) return;
