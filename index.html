@@ -215,13 +215,14 @@
             const scrollContainerRef = useRef(null);
             const pathRef = useRef(null);
             const trainRef = useRef(null); 
-            const trainContainerRef = useRef(null);
-            const audioRef = useRef(null); 
-            
-            const [stationOffsets, setStationOffsets] = useState([]);
+        const trainContainerRef = useRef(null);
+        const audioRef = useRef(null); 
+        const playingStationIdRef = useRef(null); // [추가] 현재 재생 중인 역 ID 추적용
 
-            // 초기화
-            useEffect(() => {
+        const [stationOffsets, setStationOffsets] = useState([]);
+
+        // 초기화
+        useEffect(() => {
                 const handleResize = () => {
                     if (containerRef.current) {
                         setContainerWidth(containerRef.current.offsetWidth);
@@ -238,49 +239,65 @@
                 }
                 
                 return () => window.removeEventListener('resize', handleResize);
-            }, []);
+        }, []);
 
-            // 오디오 재생 로직 (개선됨)
-            useEffect(() => {
-                if (isPanelOpen && selectedStation) {
-                    if (audioRef.current) {
-                        audioRef.current.pause();
-                        audioRef.current.currentTime = 0;
-                        audioRef.current = null;
+        // 오디오 재생 로직 (즉시 재생 및 끊김 방지 개선됨)
+        useEffect(() => {
+            // 재생 조건: 역이 선택되어 있고, (팝업이 열려있거나 OR 이동 중일 때)
+            const shouldPlay = selectedStation && (isPanelOpen || isMoving);
+
+            if (shouldPlay) {
+                // 이미 해당 역의 음악이 재생 중이라면 리스타트하지 않고 유지
+                if (audioRef.current && playingStationIdRef.current === selectedStation.id) {
+                    if (audioRef.current.paused) {
+                        audioRef.current.play().catch(e => console.log("재생 재시도 실패:", e));
                     }
-                    
-                    const musicNumber = (selectedStation.id % 3) + 1;
-                    const audioPath = `./music${musicNumber}.mp3`;
-                    
-                    const audio = new Audio(audioPath);
-                    const playPromise = audio.play();
-                    
-                    if (playPromise !== undefined) {
-                        playPromise
-                            .then(() => {})
-                            .catch(e => {
-                                console.log(`음악 재생 실패 (${audioPath}):`, e);
-                            });
-                    }
-                    
-                    audioRef.current = audio;
-                } else {
-                    if (audioRef.current) {
-                        audioRef.current.pause();
-                        audioRef.current = null;
-                    }
+                    return; 
+                }
+
+                // 기존 오디오 정지
+                if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 0;
                 }
                 
-                return () => {
-                    if (audioRef.current) {
-                        audioRef.current.pause();
-                    }
-                };
-            }, [isPanelOpen, selectedStation]);
+                // 파일명 설정 (music1.mp3 ~ )
+                const musicNumber = selectedStation.id + 1;
+                const audioPath = `./music${musicNumber}.mp3`;
+                
+                const audio = new Audio(audioPath);
+                const playPromise = audio.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise
+                        .then(() => {
+                            // 재생 성공
+                        })
+                        .catch(e => {
+                            console.log(`음악 재생 실패 (파일 없음 등): ${audioPath}`, e);
+                        });
+                }
+                
+                audioRef.current = audio;
+                playingStationIdRef.current = selectedStation.id; // 현재 재생 중인 역 ID 기록
 
-            const prevTrainIndex = useRef(0);
-            useEffect(() => { 
-                if (!isMoving) {
+            } else {
+                // 패널이 닫히고 이동 중도 아니라면 오디오 정지
+                if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current = null;
+                }
+                playingStationIdRef.current = null;
+            }
+            
+            return () => {
+                // 컴포넌트가 언마운트될 때만 정지 (여기서는 굳이 일시정지 안 해도 됨, 의존성 변경 시 위 로직이 처리함)
+            };
+        }, [isPanelOpen, isMoving, selectedStation]); // 의존성에 isMoving 추가
+
+        const prevTrainIndex = useRef(0);
+        useEffect(() => { 
+            if (!isMoving) {
                     prevTrainIndex.current = trainIndex; 
                 }
             }, [trainIndex, isMoving]);
