@@ -15,6 +15,19 @@
     <!-- Babel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 
+    <!-- Firebase SDK (ES Modules) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 전역으로 사용할 수 있게 window 객체에 할당
+        window.firebaseModules = { 
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, 
+            getFirestore, doc, setDoc, collection, onSnapshot 
+        };
+    </script>
+
     <!-- 폰트 -->
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
 
@@ -80,9 +93,9 @@
         // --- 데이터 ---
         const rawStationList = [
             "606", "문산(전역)", "행신역", "서울역", "용산역", 
-            "대전역", "서대전역", "오월드", "전시기방", "식장산", 
-            "성심당", "제주국제공항", "9.81파크", "신창풍차해안", "차량방전", 
-            "레일바이크", "제주국제공항", "동대구역", "구미역", "금오산", 
+            "대전역", "서대전역", "오월드", "식장산", "전시기방", 
+            "성심당", "제주국제공항", "9.81파크(+동물원)", "신창풍차해안", "차량방전", 
+            "레일바이크", "제주국제공항", "동대구역(신세계)", "구미역", "금오산", 
             "왜관역(칠곡군)", "왜관시장", "석적", "왜관철교", "(구)왜관터널", 
             "가산산성", "대구국제사격장", "달성군", "강정보", "동성로", 
             "무신사", "스파크랜드", "화본역", "중국집1", "동대구역(터미널)", 
@@ -108,7 +121,7 @@
                 { label: "경의중앙", short: "경의", color: "#77C4A3" }
             ],
             "대전역": [{ label: "1호선", short: "1", color: "#007448" }], 
-            "동대구역": [
+            "동대구역(신세계)": [
                 { label: "1호선", short: "1", color: "#D93F5C" }, 
                 { label: "대경선", short: "대경", color: "#0054A6" } 
             ],
@@ -123,11 +136,11 @@
         // [열차 정차 정보 데이터]
         const TRAIN_INFO = {
             "행신역": ["KTX"],
-            "용산역": ["KTX"],
-            "서대전역": ["KTX"],
+            "용산역": ["KTX", "무궁화", "ITX-새마을", "ITX-마음"],
+            "서대전역": ["KTX", "무궁화", "ITX-새마을", "ITX-마음"],
             "서울역": ["KTX", "무궁화", "ITX-새마을", "ITX-마음"], // SRT 제거
             "대전역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
-            "동대구역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
+            "동대구역(신세계)": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
             "진주역": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
             "동대구역(터미널)": ["KTX", "SRT", "무궁화", "ITX-새마을", "ITX-마음"],
             "구미역": ["무궁화", "ITX-새마을", "ITX-마음"],
@@ -209,6 +222,7 @@
             
             const [memories, setMemories] = useState({});
             const [currentReviews, setCurrentReviews] = useState({});
+            const [user, setUser] = useState(null); // Firebase 유저 상태
 
             const [containerWidth, setContainerWidth] = useState(360);
             const containerRef = useRef(null);
@@ -221,7 +235,7 @@
 
             const [stationOffsets, setStationOffsets] = useState([]);
 
-            // 초기화
+            // [Firebase 초기화 및 인증]
             useEffect(() => {
                 const handleResize = () => {
                     if (containerRef.current) {
@@ -230,16 +244,74 @@
                 };
                 handleResize();
                 window.addEventListener('resize', handleResize);
-                
-                try {
-                    const saved = localStorage.getItem('travel_memories_final_fixed_popup');
-                    if (saved) setMemories(JSON.parse(saved));
-                } catch (e) {
-                    console.error("Failed to load memories", e);
+
+                // Firebase 설정
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+                    apiKey: "AIzaSyDf7FQL5ohMjEpPPUb_ljSXy3sclD_9aDw",
+                    authDomain: "mytravellog-d7883.firebaseapp.com",
+                    projectId: "mytravellog-d7883",
+                    storageBucket: "mytravellog-d7883.firebasestorage.app",
+                    messagingSenderId: "117323760888",
+                    appId: "1:117323760888:web:f93baf1457c76f349d270d"
+                };
+
+                // window.firebaseModules가 로드될 때까지 대기
+                if (window.firebaseModules) {
+                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebaseModules;
+                    
+                    try {
+                        const app = initializeApp(firebaseConfig);
+                        const auth = getAuth(app);
+                        
+                        const initAuth = async () => {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        };
+                        initAuth();
+                        
+                        const unsubscribe = onAuthStateChanged(auth, setUser);
+                        return () => {
+                            unsubscribe();
+                            window.removeEventListener('resize', handleResize);
+                        };
+                    } catch (e) {
+                        console.error("Firebase Init Error:", e);
+                    }
                 }
-                
+
                 return () => window.removeEventListener('resize', handleResize);
             }, []);
+
+            // [Firestore 데이터 실시간 동기화]
+            useEffect(() => {
+                if (!user || !window.firebaseModules) return;
+
+                const { getFirestore, collection, onSnapshot } = window.firebaseModules;
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                // 'reviews' 컬렉션 구독 (모든 리뷰 데이터)
+                // 경로: artifacts/{appId}/public/data/reviews
+                const unsubscribe = onSnapshot(
+                    collection(db, 'artifacts', appId, 'public', 'data', 'reviews'),
+                    (snapshot) => {
+                        const newMemories = {};
+                        snapshot.forEach((doc) => {
+                            // 문서 ID는 역의 인덱스(0, 1, 2...)
+                            newMemories[doc.id] = doc.data();
+                        });
+                        setMemories(newMemories);
+                    },
+                    (error) => {
+                        console.error("데이터 불러오기 실패:", error);
+                    }
+                );
+
+                return () => unsubscribe();
+            }, [user]);
 
             // [오디오 로직 1: 재생 담당] 
             // selectedStation이 변경되면 무조건 재생
@@ -473,20 +545,34 @@
                                 trainRef.current.style.transition = 'none';
                                 trainRef.current.style.transform = `rotate(0deg)`;
                             }
+                            // [수정] 이동 상태 해제와 패널 열림을 동시에 처리하여 오디오 끊김 방지
+                            setIsPanelOpen(true);
                             setIsMoving(false);
-                            setTimeout(() => setIsPanelOpen(true), 500);
                         }
                     }, transitionDuration * 1000 + 300); 
                     return () => clearTimeout(timer);
                 }
             }, [isMoving, transitionDuration]);
 
-            const saveMemory = () => {
-                if (!selectedStation) return;
-                const newMemories = { ...memories, [selectedStation.id]: currentReviews };
-                setMemories(newMemories);
-                localStorage.setItem('travel_memories_popup_final', JSON.stringify(newMemories));
-                alert("소중한 기록이 저장되었습니다! ⭐");
+            // [Firestore 저장]
+            const saveMemory = async () => {
+                if (!selectedStation || !user || !window.firebaseModules) return;
+
+                const { getFirestore, doc, setDoc } = window.firebaseModules;
+                const db = getFirestore();
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+                try {
+                    // 공개 데이터 경로: artifacts/{appId}/public/data/reviews/{stationId}
+                    await setDoc(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'reviews', String(selectedStation.id)),
+                        currentReviews
+                    );
+                    alert("소중한 기록이 저장되었습니다! ⭐ (모두에게 공유됩니다)");
+                } catch (e) {
+                    console.error(e);
+                    alert("저장에 실패했습니다. 관리자에게 문의하세요.");
+                }
             };
 
             const handleReviewChange = (member, field, value) => {
@@ -717,7 +803,7 @@
                                         </div>
                                         <p className="text-slate-600 text-sm font-medium leading-relaxed">
                                             역을 클릭하여 나만의 추억과<br/>
-                                            별점을 기록해 보세요! ✍️
+                                            별점을 기록해 보세요! ✍️ (모두와 공유됩니다)
                                         </p>
                                     </div>
 
@@ -742,7 +828,7 @@
                         <header className="absolute top-0 left-0 right-0 z-30 shrink-0 bg-white/70 backdrop-blur-md border-b border-white/50 shadow-sm flex flex-col transition-all duration-300">
                             <div className="h-14 flex items-center justify-between px-6">
                                 <div className="flex items-center gap-2">
-                                    <a href="index.html" className="p-2 -ml-2 rounded-full hover:bg-black/5 transition-colors text-slate-800">
+                                    <a href="https://won429.github.io/enjoy_bus/" className="p-2 -ml-2 rounded-full hover:bg-black/5 transition-colors text-slate-800">
                                         <ChevronLeft size={22} />
                                     </a>
                                     <span className="font-extrabold text-xl tracking-tight text-slate-800">여행 기록</span>
